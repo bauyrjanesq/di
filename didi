@@ -1,0 +1,219 @@
+import streamlit as st
+import os
+import json
+import pickle
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import boto3
+import botocore
+from pprint import pprint
+import faiss
+from utils import experience_score, work_type_match, language_score_fraction, education_matches, preprocess_resume
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+
+st.set_page_config(
+    page_title="Подбор резюме",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.title("Подбор резюме на вакансию")
+st.markdown("---")
+
+fields = {
+    'График работы': '5/2',
+    'Дополнительные условия': '',
+    'Знание языков': ['Русский', 'казахский'],
+    'Должность': '-',
+    'Навыки/знания': [
+        'Навыки работы на уровне пользователя с SQL.',
+        'Умения и навыки программировать в среде Jupyter на языке Python (pandas, numpy, seaborn / matplotlib, nltk, spaCy, transformers).',
+        'Основы статистики и теории вероятностей.',
+        'Базовые знания в области машинного обучения и глубокого обучения.'
+    ],
+    'Образование': '-',
+    'Опыт работы': '-',
+    'Функциональные обязанности по должности': [
+        'Разрабатывает и внедряет NLP модели для обработки и анализа текстовых данных.',
+        'Проводит оценку и оптимизацию моделей NLP для повышения их точности и эффективности.',
+        'Умения и навыки выявлять потребности бизнеса в области обработки естественного языка (NLP).'
+    ]
+}
+
+with st.form(key="requirements_form"):
+    st.subheader("Заполните требования вакансии")
+    user_inputs = {}
+    for label, default in fields.items():
+        if isinstance(default, list):
+            text = st.text_area(
+                label,
+                value="\n".join(default),
+                help="Введите каждое значение с новой строки"
+            )
+            user_inputs[label] = [
+                item.strip()
+                for line in text.splitlines()
+                for item in line.split(',')
+                if item.strip()
+            ]
+        else:
+            user_inputs[label] = st.text_input(label, value=default)
+
+    submit = st.form_submit_button("🔍 Подобрать резюме")
+job_req = user_inputs
+
+MODEL_NAME = 'model1'
+model = SentenceTransformer(MODEL_NAME, device='cpu')
+
+os.environ["http_proxy"] = ""
+os.environ["https_proxy"] = ""
+
+@st.cache_data
+def preload_embeddings(desc_cache, skill_cache):
+    desc_emb = {}
+    skill_emb = {}
+    for fn in os.listdir(desc_cache):
+        rid = fn.replace('.pkl', '')
+        with open(os.path.join(desc_cache, fn), 'rb') as f:
+            desc_emb[rid] = pickle.load(f)
+    for fn in os.listdir(skill_cache):
+        rid = fn.replace('.pkl', '')
+        with open(os.path.join(skill_cache, fn), 'rb') as f:
+            skill_emb[rid] = pickle.load(f)
+    return desc_emb, skill_emb
+
+@st.cache_data
+def load_resumes(db_path, table_name):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(f'SELECT resume_json FROM {table_name}')
+    rows = cursor.fetchall()
+    conn.close()
+    return [json.loads(row[0]) for row in rows]
+
+def score_resume(x):
+    rid = x['id']
+    if not any(title.lower() in x.get('position', '').lower() for title in target_titles):
+        return None
+
+    score = 0
+    skills_fit = 0
+
+    score += weights['year_exp'] * experience_score(job_req['Опыт работы'], x.get('experience_months', '0'))
+
+    desc_embs = resume_descs.get(rid, [])
+    if desc_embs:
+        best_fit = max(
+            float(cosine_similarity(req_desc_emb, sent).max(axis=1).mean())
+            for sent in desc_embs
+        )
+        score += weights['exp'] * best_fit
+
+    skill_np = resume_skills.get(rid)
+    if skill_np is not None:
+        skills_fit = float(cosine_similarity(req_skill_emb, skill_np).max(axis=1).mean())
+        score += weights['skills'] * skills_fit
+
+    if work_type_match(job_req['График работы'], x.get('work_type', [])) == 0:
+        return None
+
+    lang_score = language_score_fraction(job_req['Знание языков'], x.get('languages', {}))
+    score += weights['lang_score'] * lang_score
+
+    if x.get('education'):
+        score += weights['edu_score'] * education_matches(job_req['Образование'], x['education'])
+
+    x['score'] = round(score, 2)
+    x['skills_fit'] = round(skills_fit * weights['skills'], 2)
+    return x
+
+if submit:
+    with st.spinner("Идёт подбор резюме..."):
+        job_req = user_inputs
+        job_descs = job_req['Функциональные обязанности по должности']
+        job_skills = job_req['Навыки/знания']
+        target_titles = job_req['Должность']
+
+        req_desc_emb = model.encode(job_descs, convert_to_numpy=True, batch_size=256)
+        req_skill_emb = model.encode(job_skills, convert_to_numpy=True, batch_size=256)
+
+        resume_descs, resume_skills = preload_embeddings('desc_embeddings', 'skill_embeddings')
+        resumes = load_resumes('resumes.db', 'processed_resumes')
+
+        # -------- Parallel Scoring --------
+        weights = {
+            'year_exp' : 15,
+            'exp'      : 40,
+            'skills'   : 30,
+            'lang_score': 5,
+            'edu_score': 10
+        }
+
+        with ThreadPoolExecutor() as executor:
+            results = list(executor.map(score_resume, resumes))
+            results = [r for r in results if r]
+
+        final_res = sorted(results, key=lambda x: -x['skills_fit'])[:20]
+        
+        VPC_ENDPOINT_URL = "https://vpce-020ae5d25917d44a7-4jbuf238.bedrock-runtime.eu-central-1.vpce.amazonaws.com"
+        bedrock_runtime = boto3.client(
+                    'bedrock-runtime',
+                    endpoint_url=VPC_ENDPOINT_URL,
+                    region_name="eu-central-1", 
+                    verify=False
+                )
+        
+        def aws_score_candidate(candidate):
+            prompt_data = f"""  
+            Ты крутой hr, который оценивает резюме смотря на требования от 0 до 100, если какие-то важные требования не подходят - сразу ставь 0.
+            Особенно ты смотришь на 'Функциональные обязанности по должности' в требованиях и на experience в резюме. 
+            Кандидат должен иметь опыт четко такой как написано в требования.
+            Ты должен просто вернуть оценку без лишних слов и описаний.
+        
+            Требования:
+            {str(job_req)}
+        
+            Резюме:
+            {str(candidate)}
+            """
+        
+            try:
+                body = json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 100,
+                    "temperature": 0,
+                    "top_k": 250,
+                    "top_p": 0.99,
+                    "messages": [{"role": "user", "content": [{"type": "text", "text": prompt_data}]}]
+                })
+        
+                response = bedrock_runtime.invoke_model(
+                    body=body,
+                    modelId='eu.anthropic.claude-3-7-sonnet-20250219-v1:0',
+                    accept="application/json",
+                    contentType="application/json"
+                )
+        
+                content = json.loads(response.get("body").read())["content"][0]["text"]
+                candidate['aws_score'] = int(content.strip())
+                return candidate
+        
+            except Exception as e:
+                candidate['aws_score'] = 0
+                return candidate
+        
+        # 🔄 Score top candidates with AWS
+        with st.spinner("Оценка резюме через AWS..."):
+            with ThreadPoolExecutor() as executor:
+                aws_evaluated = list(executor.map(aws_score_candidate, final_res))
+        
+            aws_evaluated = sorted(aws_evaluated, key=lambda x: -x['aws_score'])
+        
+            st.subheader("Результаты оценки через AWS")
+            for i, cand in enumerate(aws_evaluated):
+                st.write(f"Кандидат #{i + 1}")
+                st.write(cand)
