@@ -1,0 +1,112 @@
+{
+  "model": "Kyrmasch/t5-kazakh-qa",
+  "baseline_params": 756155392,
+  "d_ff": 2816,
+  "n_encoder_layers": 24,
+  "results": [
+    {
+      "prune_ratio": 0.0,
+      "pruned_pct": "0%",
+      "accuracy": 0.9,
+      "accuracy_pct": 90.0,
+      "accuracy_drop_pct": 0.0,
+      "avg_time_ms": 300.6,
+      "speedup": 1.0,
+      "params": 756155392,
+      "params_reduction_pct": 0.0,
+      "correct": 9,
+      "total": 10
+    },
+    {
+      "prune_ratio": 0.1,
+      "pruned_pct": "10%",
+      "accuracy": 1.0,
+      "accuracy_pct": 100.0,
+      "accuracy_drop_pct": -10.0,
+      "avg_time_ms": 321.5,
+      "speedup": 0.935,
+      "params": 735437824,
+      "params_reduction_pct": 2.74,
+      "correct": 10,
+      "total": 10
+    },
+    {
+      "prune_ratio": 0.2,
+      "pruned_pct": "20%",
+      "accuracy": 1.0,
+      "accuracy_pct": 100.0,
+      "accuracy_drop_pct": -10.0,
+      "avg_time_ms": 333.0,
+      "speedup": 0.903,
+      "params": 714646528,
+      "params_reduction_pct": 5.49,
+      "correct": 10,
+      "total": 10
+    },
+    {
+      "prune_ratio": 0.3,
+      "pruned_pct": "30%",
+      "accuracy": 0.9,
+      "accuracy_pct": 90.0,
+      "accuracy_drop_pct": 0.0,
+      "avg_time_ms": 337.2,
+      "speedup": 0.892,
+      "params": 693928960,
+      "params_reduction_pct": 8.23,
+      "correct": 9,
+      "total": 10
+    },
+    {
+      "prune_ratio": 0.4,
+      "pruned_pct": "40%",
+      "accuracy": 0.9,
+      "accuracy_pct": 90.0,
+      "accuracy_drop_pct": 0.0,
+      "avg_time_ms": 336.0,
+      "speedup": 0.895,
+      "params": 673137664,
+      "params_reduction_pct": 10.98,
+      "correct": 9,
+      "total": 10
+    },
+    {
+      "prune_ratio": 0.5,
+      "pruned_pct": "50%",
+      "accuracy": 0.7,
+      "accuracy_pct": 70.0,
+      "accuracy_drop_pct": 20.0,
+      "avg_time_ms": 383.6,
+      "speedup": 0.784,
+      "params": 652346368,
+      "params_reduction_pct": 13.73,
+      "correct": 7,
+      "total": 10
+    },
+    {
+      "prune_ratio": 0.6,
+      "pruned_pct": "60%",
+      "accuracy": 0.4,
+      "accuracy_pct": 40.0,
+      "accuracy_drop_pct": 50.0,
+      "avg_time_ms": 523.9,
+      "speedup": 0.574,
+      "params": 631628800,
+      "params_reduction_pct": 16.47,
+      "correct": 4,
+      "total": 10
+    },
+    {
+      "prune_ratio": 0.7,
+      "pruned_pct": "70%",
+      "accuracy": 0.2,
+      "accuracy_pct": 20.0,
+      "accuracy_drop_pct": 70.0,
+      "avg_time_ms": 886.8,
+      "speedup": 0.339,
+      "params": 610837504,
+      "params_reduction_pct": 19.22,
+      "correct": 2,
+      "total": 10
+    }
+  ]
+}
